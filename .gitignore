@@ -8,3 +8,5 @@ db/*.db
 png/
 tmp_*
 .streamlit/secrets.toml
+db/*.db
+png/
