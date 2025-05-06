@@ -10,3 +10,4 @@ tmp_*
 .streamlit/secrets.toml
 db/*.db
 png/
+sounds/
