@@ -11,3 +11,6 @@ tmp_*
 db/*.db
 png/
 sounds/
+*.csv
+*.json
+
