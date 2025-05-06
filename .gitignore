@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.env
+.env
+db/*.db
+png/
+tmp_*
+.streamlit/secrets.toml

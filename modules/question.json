@@ -1,0 +1,148 @@
+{
+  "質問内容": {
+    "field_name": "",
+    "company_n": "-",
+    "branch_n": "-", 
+    "cif_n": "-",
+    "case_type": "-",
+    "fa_name": "-",
+    "fa_jimu": "-"
+  },
+  "申込人の情報を教えてください。": {
+    "client_sei": "",
+    "client_mei": "",
+    "client_sei_furi": "",
+    "client_mei_furi": ""
+  },
+  "顧客が外国籍であったことはありますか。（協議CL : B-②）": {
+    "client_foreign_comfirmation": ""
+  },
+  "申込理由を選択してください。複数選択可。": {
+    "application_reason": ""
+  },
+  "申込人に既存の遺言有無、種類について選択してください。": {
+    "client_existing_will": ""
+  },
+  "相互遺言が存在しますか？存在する場合は、相互遺言のある方の氏名を記載してください。": {
+    "client_mutual_will": "",
+    "client_mutual_will_name": "",
+    "inflow_assets": ""
+  },
+  "使用予定の役場を記載してください。": {
+    "municipal_office": ""
+  },
+  "申込人情報についての特記事項があれば、ご記載ください。": {
+    "client_info_special_notes": ""
+  },
+  "家族構成と補充対象について教えてください。": {
+    "heir1": {
+      "relationship": "",
+      "sei": "",
+      "mei": "",
+      "sei_furi": "",
+      "mei_furi": "",
+      "hoju_requirement": "",
+      "hoju_judge": "",
+      "not_hoju_reason": ""
+    },
+    "Legatee1": {
+      "relationship": "",
+      "sei": "",
+      "mei": "", 
+      "sei_furi": "",
+      "mei_furi": "",
+      "hoju_requirement": "",
+      "hoju_judge": "",
+      "not_hoju_reason": ""
+    },
+    "Donee1": {
+      "company_name": ""
+    }
+  },
+  "家族構成・補充対象についての特記事項があれば、ご記載ください。": {
+    "special_notes1": ""
+  },
+  "遺言者死亡時に財産を渡さない相続人にも遺言を開示し、財産目録を交付すること」を了承していただいていますか？（協議CL : B-③）": {
+    "disclosure_approve": ""
+  },
+  "遺留分権利者や財産を渡す人に行方不明や連絡をとることが極めて困難な人はいない。」ことを確認しましたか？（協議CL : B-⑦）": {
+    "heir_contact_confirmation": ""
+  },
+  "推定相続人及び受遺者に意思能力がない、または疑義がある人はいない。」ことを確認しましたか？（協議CL : D-②）": {
+    "heir_capacity_confirmation": ""
+  },
+  "外国に居住する、または外国籍の相続人や受遺者は存在しますか？（協議CL : D-②）": {
+    "heir_foreign_confirmation": "",
+    "financial_asset_distribution": ""
+  },
+  "質問2-5・2-6の対応で必要な負担付きを指定してください。（協議CL : D-②）": {
+    "obligation": ""
+  },
+  "質問2-5、2-6の該当者への「金融資産以外の配分」がある場合、": {
+    "risk_explanation": ""
+  },
+  "希望する配分パターン数を教えてください。": {
+    "distribution_pattern_count": ""
+  },
+  "配分パターン①の配分指示・配分理由について教えてください。": {
+    "estate_exists": "",
+    "estate_distribution_plan": "",
+    "estate_distribution_reason": "",
+    "financial_exists": "",
+    "financial_distribution_plan": "",
+    "financial_distribution_reason": "",
+    "insurance_exists": "",
+    "insurance_distribution_plan": "",
+    "insurance_distribution_reason": "",
+    "capital_contribution_exists": "",
+    "capital_contribution_distribution_plan": "",
+    "capital_contribution_distribution_reason": "",
+    "company_shares_exists": "",
+    "company_shares_distribution_plan": "",
+    "company_shares_distribution_reason": "",
+    "golf_club_membership_exists": "",
+    "golf_club_membership_distribution_plan": "",
+    "golf_club_membership_distribution_reason": "",
+    "department_store_membership_exists": "",
+    "department_store_membership_distribution_plan": "",
+    "department_store_membership_distribution_reason": "",
+    "reit_estate_exists": "",
+    "reit_estate_distribution_plan": "",
+    "reit_estate_distribution_reason": "",
+    "gold_exists": "",
+    "gold_distribution_plan": "",
+    "gold_distribution_reason": "",
+    "other_exists": "",
+    "other_distribution_plan": "",
+    "other_distribution_reason": ""
+  },
+  "配分パターン②の配分指示・配分理由について教えてください。": {
+    "diviision_risk_explanation": ""
+  },
+  "配分パターン③の配分指示・配分理由について教えてください。": {
+    "special_notes2": ""
+  },
+  "次回の面談に向けて補充の配分を作成しますか。": {
+    "hoju_need": ""
+  },
+  "補充作成する配分パターン数を教えてください。": {
+    "hoju_pattern_count": ""
+  },
+  "補充配分パターン①で、補充配分と補充配分の理由についてそれぞれ教えてください。": {
+    "hoju1_object_1": "",
+    "hoju1_distribution_1": "",
+    "hoju1_distribution_1_reason": "",
+    "hoju1_object_2": "",
+    "hoju1_distribution_2": "",
+    "hoju1_distribution_2_reason": "",
+    "hoju1_object_3": "",
+    "hoju1_distribution_3": "",
+    "hoju1_distribution_3_reason": "",
+    "hoju1_object_4": "",
+    "hoju1_distribution_4": "",
+    "hoju1_distribution_4_reason": "",
+    "hoju1_object_5": "",
+    "hoju1_distribution_5": "",
+    "hoju1_distribution_5_reason": ""
+  }
+}
