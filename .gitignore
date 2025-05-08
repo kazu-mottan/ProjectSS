@@ -13,4 +13,5 @@ png/
 sounds/
 *.csv
 *.json
+Settings.json
 

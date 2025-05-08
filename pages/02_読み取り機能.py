@@ -8,11 +8,11 @@ import pandas as pd
 from collections import Counter
 import matplotlib.pyplot as plt
 import numpy as np
-from azure.cognitiveservices.vision.computervision import ComputerVisionClient
-from msrest.authentication import CognitiveServicesCredentials
+import json
+import re
 
-st.set_page_config(page_title="読み取り機能(テスト版)", page_icon="🖼️")
-st.title("読み取り機能(テスト版)")
+st.set_page_config(page_title="画像読み取りAI（3ステップ版）", page_icon="🖼️")
+st.title("画像読み取りAI（3ステップ版）")
 
 # ページ幅拡張
 st.markdown(
@@ -64,255 +64,259 @@ def gemini_ocr(file_path, prompt):
         ])
         return response.text
 
-def azure_ocr(file_path, prompt=None, want_to_read=None):
-    """Azure Computer Vision OCR（画像・PDF両対応、キーワード抽出対応）"""
-    import os
-    endpoint = st.secrets["azure_vision_endpoint"]
-    key = st.secrets["azure_vision_key"]
-    client = ComputerVisionClient(endpoint, CognitiveServicesCredentials(key))
-    ext = os.path.splitext(file_path)[1].lower()
-    results = []
-    if ext == ".pdf":
-        images = convert_from_path(file_path)
-        for i, img in enumerate(images):
-            tmp_img_path = f"tmp_azure_{i}.png"
-            img.save(tmp_img_path, format="PNG")
-            with open(tmp_img_path, "rb") as f:
-                ocr_result = client.recognize_printed_text_in_stream(image=f, language="ja")
-            lines = []
-            for region in ocr_result.regions:
-                for line in region.lines:
-                    lines.append("".join([w.text for w in line.words]))
-            results.append("\n".join(lines))
-            os.remove(tmp_img_path)
-        text = "\n".join(results)
-    else:
-        with open(file_path, "rb") as f:
-            ocr_result = client.recognize_printed_text_in_stream(image=f, language="ja")
-        lines = []
-        for region in ocr_result.regions:
-            for line in region.lines:
-                lines.append("".join([w.text for w in line.words]))
-        text = "\n".join(lines)
-    # --- キーワード抽出処理 ---
-    if want_to_read:
-        keywords = [w.strip() for w in want_to_read.split(",") if w.strip()]
-        filtered = []
-        for line in text.splitlines():
-            if any(kw in line for kw in keywords):
-                filtered.append(line)
-        return "\n".join(filtered) if filtered else "(該当する行がありません)"
-    else:
-        return text
-
-# --- 1. 複数ファイルアップロード ---
-st.subheader("1. ファイルをアップロード（複数可）")
-uploaded_files = st.file_uploader("画像またはPDFを選択", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=True)
-
-# --- 2. 各AIでOCR実行 ---
-if uploaded_files:
-    st.subheader("2. 各AIで読み取りを実行")
-    want_to_read = st.text_input("読み取りたい項目（全ファイル共通）")
-    for uploaded_file in uploaded_files:
-        st.markdown(f"---\n#### ファイル: {uploaded_file.name}")
-        # 一時保存
-        file_ext = uploaded_file.name.split('.')[-1].lower()
-        file_type = "image" if file_ext in ["png", "jpg", "jpeg"] else "pdf"
-        save_path = f"tmp_{uploaded_file.name}"
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        # プレビュー
-        col_img, col_ocr = st.columns([7, 3], gap="large")
-        with col_img:
-            if file_type == "image":
-                st.image(save_path, caption=uploaded_file.name, width=350)
-            elif file_type == "pdf":
-                st.markdown(f"[PDFを開く]({save_path})")
-        with col_ocr:
-            # ファイルごとにwant_to_read入力欄
-            want_to_read_file = st.text_input("読み取りたい項目（このファイル用）", value=want_to_read, key=f"want_to_read_{uploaded_file.name}")
-            # 共通プロンプト生成
-            common_prompt = COMMON_PROMPT_TEMPLATE.replace("{variables}", want_to_read_file)
-            prompt = common_prompt
-
-            # --- モデル選択・実行回数指定 ---
-            model_options = ["Claude", "OpenAI", "Gemini", "Azure"]
-            selected_models = st.multiselect("実行するAIモデル", model_options, default=["Claude", "OpenAI", "Gemini"])
-            repeat = st.number_input("各モデルの実行回数", min_value=1, max_value=10, value=1, step=1, key=f"repeat_{uploaded_file.name}")
-            task_type = st.selectbox("タスク種別（バギング用）", ["分類", "回帰"], key=f"task_type_{uploaded_file.name}")
-
-            # --- 一括実行ボタン ---
-            if st.button(f"選択したモデルで一括実行: {uploaded_file.name}", key=f"multi_run_{uploaded_file.name}"):
-                all_results = {model: [] for model in selected_models}
-                for model in selected_models:
-                    for i in range(int(repeat)):
-                        if model == "Claude":
-                            result = reader.ocr_and_refine(save_path, prompt)
-                        elif model == "OpenAI":
-                            result = reader.openai_read_image_and_extract_info(save_path, prompt)
-                        elif model == "Gemini":
-                            result = gemini_ocr(save_path, prompt)
-                        elif model == "Azure":
-                            result = azure_ocr(save_path, prompt, want_to_read_file)
-                        else:
-                            result = ""
-                        print(f"[{model} OCR result for {save_path} (run {i+1})]:\n{result}")
-                        all_results[model].append(result)
-                st.session_state[f"all_results_{uploaded_file.name}"] = all_results
-
-        # --- 結果表示・バギング集計（中央寄せ） ---
-        if f"all_results_{uploaded_file.name}" in st.session_state:
-            all_results = st.session_state[f"all_results_{uploaded_file.name}"]
-            # テーブル用データ作成
-            table_data = []
-            for i in range(int(repeat)):
-                row = {"回数": i+1}
-                for model in selected_models:
-                    row[model] = all_results[model][i] if len(all_results[model]) > i else ""
-                table_data.append(row)
-            df = pd.DataFrame(table_data)
-            st.markdown("<div style='text-align:center'><h4>各モデルの実行結果（全回）</h4></div>", unsafe_allow_html=True)
-            st.dataframe(df, use_container_width=True)
-            # バギング集計
-            bagging_preds = []
-            for i in range(int(repeat)):
-                preds = [all_results[model][i] for model in selected_models if len(all_results[model]) > i]
-                if not preds:
-                    continue
-                if task_type == "分類":
-                    try:
-                        bagging_pred = statistics.mode(preds)
-                    except Exception:
-                        bagging_pred = "-"
-                else:
-                    try:
-                        nums = [float(p) for p in preds]
-                        bagging_pred = sum(nums) / len(nums)
-                    except Exception:
-                        bagging_pred = "-"
-                bagging_preds.append(bagging_pred)
-            st.markdown("<div style='text-align:center'><h4>バギングによる最終予測（各回）</h4></div>", unsafe_allow_html=True)
-            st.dataframe(pd.DataFrame({"回数": list(range(1, len(bagging_preds)+1)), "バギング予測": bagging_preds}), use_container_width=True)
-            # グラフ表示
-            if task_type == "分類":
-                counter = Counter(bagging_preds)
-                df_bar = pd.DataFrame(counter.items(), columns=["予測ラベル", "回数"])
-                st.bar_chart(df_bar.set_index("予測ラベル"))
-            else:
-                fig, ax = plt.subplots()
-                ax.hist([float(x) for x in bagging_preds if x != "-"], bins=10)
-                ax.set_xlabel("予測値")
-                ax.set_ylabel("頻度")
-                st.pyplot(fig)
-
-# 既存OCRエントリ表示・実行
+# --- OCR実行対象を選択（テスト実行用） ---
+st.header("[テスト用] OCR実行対象を選択・実行")
 entries = reader.get_ocr_entries_with_images(db_path, png_dir)
 if 'ocr_done' not in st.session_state:
     st.session_state.ocr_done = False
+
 if not st.session_state.ocr_done:
     st.info("OCR実行対象を選択してください。選択したファイルごとに画像（左）とOCR操作（右）が表示されます。")
     entry_options = [f"ID:{e['id']} | {e['filename']}" for e in entries]
-    selected_options = st.multiselect("OCR実行対象を選択", entry_options)
-    selected_ids = [int(opt.split('|')[0].replace('ID:', '').strip()) for opt in selected_options]
+    selected_options_test = st.multiselect("OCR実行対象を選択（テスト用）", entry_options, key="ocr_entry_multiselect_test")
+    selected_ids_test = [int(opt.split('|')[0].replace('ID:', '').strip()) for opt in selected_options_test]
 
     for entry in entries:
-        if entry['id'] in selected_ids:
-            col_img, col_ocr = st.columns([7, 3], gap="large")
-            with col_img:
-                st.markdown(f"#### プレビュー: {entry['filename']}")
-                if entry['type'] == "image":
-                    st.image(entry['file_path'], caption=entry['filename'], width=350)
-                elif entry['type'] == "pdf":
-                    st.markdown(f"[PDFを開く]({entry['file_path']})")
-                else:
-                    st.info("対応していないファイル形式です。")
-            with col_ocr:
-                st.markdown(f"**want_to_read:** {entry['want_to_read']}")
-                key_claude = f"claude_result_{entry['id']}"
-                key_openai = f"openai_result_{entry['id']}"
-                if st.button(f"ClaudeでOCR実行", key=f"claude_ocr_{entry['id']}"):
-                    # Claudeも共通プロンプトを使う
-                    common_prompt = COMMON_PROMPT_TEMPLATE.replace("{variables}", entry['want_to_read'])
-                    result = reader.ocr_and_refine(entry['file_path'], common_prompt)
-                    print(f"[Claude OCR result for {entry['file_path']}]:\n{result}")
-                    st.session_state[key_claude] = result
-                if key_claude in st.session_state:
-                    st.success(f"Claude Vision（{reader.model}）OCR結果（整形済み）:\n{st.session_state[key_claude]}")
-                if st.button(f"OpenAIでOCR実行", key=f"openai_ocr_{entry['id']}"):
-                    prompt = reader.make_ocr_prompt(entry['want_to_read'])
-                    result = reader.openai_read_image_and_extract_info(entry['file_path'], prompt)
-                    st.session_state[key_openai] = result
-                if key_openai in st.session_state:
-                    st.info(f"OpenAI Vision（gpt-4o）OCR結果:\n{st.session_state[key_openai]}")
-                # 出力結果をDBに登録するボタン
-                if (key_claude in st.session_state or key_openai in st.session_state):
-                    if st.button(f"出力結果を登録（このファイル）", key=f"register_result_{entry['id']}"):
-                        conn = sqlite3.connect(db_path)
-                        cursor = conn.cursor()
-                        # Claude優先、なければOpenAI
-                        result_to_save = st.session_state.get(key_claude) or st.session_state.get(key_openai)
-                        cursor.execute("UPDATE ocr SET result = ? WHERE id = ?", (result_to_save, entry['id']))
-                        conn.commit()
-                        conn.close()
-                        st.success("出力結果をデータベースに登録しました。")
-    run_ocr = st.button("選択したものだけOCR読み取りを実行", key="run_ocr")
-    if run_ocr and selected_ids:
+        if entry['id'] in selected_ids_test:
+            with st.container():
+                st.markdown(f"<div style='border:1px solid #ddd; border-radius:8px; padding:16px; margin-bottom:16px; background:#fafbfc'>", unsafe_allow_html=True)
+                col_img, col_ocr = st.columns([7, 3], gap="large")
+                with col_img:
+                    st.markdown(f"#### プレビュー: {entry['filename']}")
+                    if entry['type'] == "image":
+                        st.image(entry['file_path'], caption=entry['filename'], width=350)
+                    elif entry['type'] == "pdf":
+                        st.markdown(f"[PDFを開く]({entry['file_path']})")
+                    else:
+                        st.info("対応していないファイル形式です。")
+                with col_ocr:
+                    st.markdown(f"**want_to_read:** {entry['want_to_read']}")
+                    key_claude = f"claude_result_test_{entry['id']}"
+                    key_openai = f"openai_result_test_{entry['id']}"
+                    if st.button(f"ClaudeでOCR実行（テスト）", key=f"claude_ocr_test_{entry['id']}"):
+                        common_prompt = COMMON_PROMPT_TEMPLATE.replace("{variables}", entry['want_to_read'])
+                        result = reader.read_image_and_extract_info(entry['file_path'], common_prompt)
+                        st.session_state[key_claude] = result
+                    if key_claude in st.session_state:
+                        st.success(f"Claude Vision（{reader.model}）OCR結果（生出力）:\n{st.session_state[key_claude]}")
+                    if st.button(f"OpenAIでOCR実行（テスト）", key=f"openai_ocr_test_{entry['id']}"):
+                        prompt = reader.make_ocr_prompt(entry['want_to_read'])
+                        result = reader.openai_read_image_and_extract_info(entry['file_path'], prompt)
+                        st.session_state[key_openai] = result
+                    if key_openai in st.session_state:
+                        st.info(f"OpenAI Vision（gpt-4o）OCR結果:\n{st.session_state[key_openai]}")
+                    if (key_claude in st.session_state or key_openai in st.session_state):
+                        if st.button(f"出力結果を登録（このファイル）", key=f"register_result_test_{entry['id']}"):
+                            conn = sqlite3.connect(db_path)
+                            cursor = conn.cursor()
+                            result_to_save = st.session_state.get(key_claude) or st.session_state.get(key_openai)
+                            cursor.execute("UPDATE ocr SET result = ? WHERE id = ?", (result_to_save, entry['id']))
+                            conn.commit()
+                            conn.close()
+                            st.success("出力結果をデータベースに登録しました。")
+                st.markdown("</div>", unsafe_allow_html=True)
+    run_ocr_test = st.button("選択したものだけOCR読み取りを実行（テスト用）", key="run_ocr_test")
+    if run_ocr_test and selected_ids_test:
         with st.spinner("画像から情報を抽出中..."):
             for entry in entries:
-                if entry['id'] in selected_ids:
-                    key_claude = f"claude_result_{entry['id']}"
-                    key_openai = f"openai_result_{entry['id']}"
-                    # Claudeも共通プロンプトを使う
+                if entry['id'] in selected_ids_test:
+                    key_claude = f"claude_result_test_{entry['id']}"
+                    key_openai = f"openai_result_test_{entry['id']}"
                     common_prompt = COMMON_PROMPT_TEMPLATE.replace("{variables}", entry['want_to_read'])
-                    result = reader.ocr_and_refine(entry['file_path'], common_prompt)
-                    print(f"[Claude OCR result for {entry['file_path']}]:\n{result}")
+                    result = reader.read_image_and_extract_info(entry['file_path'], common_prompt)
                     st.session_state[key_claude] = result
-                    # OpenAI
                     prompt = reader.make_ocr_prompt(entry['want_to_read'])
                     result_openai = reader.openai_read_image_and_extract_info(entry['file_path'], prompt)
-                    print(f"[OpenAI OCR result for {entry['file_path']}]:\n{result_openai}")
                     st.session_state[key_openai] = result_openai
             st.session_state.ocr_done = True
-            st.session_state.ocr_ids = selected_ids
+            st.session_state.ocr_ids = selected_ids_test
             st.experimental_rerun()
-    elif run_ocr and not selected_ids:
+    elif run_ocr_test and not selected_ids_test:
         st.warning("OCR実行対象を1つ以上選択してください。")
-else:
-    st.success("選択した自社株のOCR読み取りが完了しました。下記に結果を表示します。")
-    entries = reader.get_ocr_entries_with_images(db_path, png_dir)
-    # テーブル用データ作成
-    table_data = []
-    for entry in entries:
-        if entry['id'] in st.session_state.ocr_ids:
-            key_claude = f"claude_result_{entry['id']}"
-            key_openai = f"openai_result_{entry['id']}"
-            table_data.append({
-                "ファイル名": entry['filename'],
-                "want_to_read": entry['want_to_read'],
-                f"Claude Vision（{reader.model}）": st.session_state.get(key_claude, ""),
-                "OpenAI Vision（gpt-4o）": st.session_state.get(key_openai, "")
-            })
-    if table_data:
-        st.dataframe(table_data)
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("もう一度選択・実行する", key="reset_ocr"):
-            st.session_state.ocr_done = False
-            st.session_state.ocr_ids = []
-            st.experimental_rerun()
-    with col2:
-        if st.button("出力結果を一括登録", key="register_all_results"):
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            updated = 0
-            for entry in entries:
-                if entry['id'] in st.session_state.ocr_ids:
-                    key_claude = f"claude_result_{entry['id']}"
-                    key_openai = f"openai_result_{entry['id']}"
-                    result_to_save = st.session_state.get(key_claude) or st.session_state.get(key_openai)
-                    if result_to_save:
-                        cursor.execute("UPDATE ocr SET result = ? WHERE id = ?", (result_to_save, entry['id']))
-                        updated += 1
-            conn.commit()
-            conn.close()
-            st.success(f"{updated}件の出力結果をデータベースに登録しました。") 
+# else: ここではst.multiselectを絶対に呼ばない
+
+# --- 1. ファイルアップロード ---
+st.header("STEP 1: 画像またはPDFをアップロード")
+uploaded_file = st.file_uploader("画像またはPDFを選択", type=["png", "jpg", "jpeg", "pdf"], accept_multiple_files=False)
+
+if uploaded_file:
+    st.success("ファイルがアップロードされました。次に進んでください。")
+    # 一時保存
+    file_ext = uploaded_file.name.split('.')[-1].lower()
+    file_type = "image" if file_ext in ["png", "jpg", "jpeg"] else "pdf"
+    save_path = f"tmp_{uploaded_file.name}"
+    with open(save_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    # プレビュー
+    if file_type == "image":
+        st.image(save_path, caption=uploaded_file.name, width=350)
+    else:
+        st.markdown(f"[PDFを開く]({save_path})")
+
+    # --- 2. AIで全情報をテーブル化（各AIモデルで比較） ---
+    st.header("STEP 2: AIで画像内の全情報をテーブル化（各AIモデルで比較）")
+    # Settings.jsonから複数プロンプトを読み込む
+    prompt_dict = {}
+    try:
+        with open("Settings.json", "r", encoding="utf-8") as f:
+            settings = json.load(f)
+            prompt_dict = settings.get("prompts", {})
+    except Exception:
+        prompt_dict = {}
+    prompt_options = ["（自由入力）"] + list(prompt_dict.keys())
+    selected_prompt = st.selectbox("プロンプト選択", prompt_options, index=0)
+    if selected_prompt != "（自由入力）" and selected_prompt in prompt_dict:
+        default_prompt = prompt_dict[selected_prompt]
+    else:
+        default_prompt = ""
+    custom_prompt = st.text_area(
+        "テーブル化プロンプト（任意。空欄の場合はデフォルトプロンプトを使用）",
+        value=default_prompt,
+        placeholder="例: 画像内の全ての情報を表形式（JSON: {\"columns\": [...], \"data\": [[...], ...]}}）で出力してください..."
+    )
+    if st.button("AIでテーブル化（全モデル比較）", key="tableize_all") or st.session_state.get("table_json_all"):
+        with st.spinner("AIが画像から全情報をテーブル化しています（全モデル）..."):
+            if custom_prompt.strip():
+                table_prompt = custom_prompt.strip()
+            else:
+                table_prompt = (
+                    f"あなたは優秀な企業アナリストです。画像内の全ての情報を表形式（JSON: {{\"columns\": [...], \"data\": [[...], ...]}}）で出力してください。"
+                    "絶対にJSONだけを返してください。解説や余計な文章は不要です。"
+                    "テーブル内の空白セルも正確に抽出し、空欄は空文字列（\"\"）で出力してください。"
+                )
+            model_results = {}
+            # Claude
+            try:
+                claude_result = reader.read_image_and_extract_info(save_path, table_prompt)
+                match = re.search(r'\{[\s\S]*\}', claude_result)
+                if match:
+                    claude_json = json.loads(match.group())
+                    model_results['Claude'] = claude_json
+                    st.session_state["table_json"] = claude_json
+                else:
+                    model_results['Claude'] = None
+            except Exception as e:
+                model_results['Claude'] = None
+                st.error(f"Claude Visionの出力パース失敗: {e}")
+            # OpenAI
+            try:
+                openai_result = reader.openai_read_image_and_extract_info(save_path, table_prompt)
+                match = re.search(r'\{[\s\S]*\}', openai_result)
+                if match:
+                    openai_json = json.loads(match.group())
+                    model_results['OpenAI'] = openai_json
+                else:
+                    model_results['OpenAI'] = None
+            except Exception as e:
+                model_results['OpenAI'] = None
+                st.error(f"OpenAI Visionの出力パース失敗: {e}")
+            # Gemini
+            try:
+                gemini_result = gemini_ocr(save_path, table_prompt)
+                match = re.search(r'\{[\s\S]*\}', gemini_result)
+                if match:
+                    gemini_json = json.loads(match.group())
+                    model_results['Gemini'] = gemini_json
+                else:
+                    model_results['Gemini'] = None
+            except Exception as e:
+                model_results['Gemini'] = None
+                st.error(f"Geminiの出力パース失敗: {e}")
+            st.session_state["table_json_all"] = model_results
+            st.success("各AIモデルのテーブル化出力を比較します。")
+            cols = st.columns(len(model_results))
+            for i, (model, data) in enumerate(model_results.items()):
+                with cols[i]:
+                    st.subheader(model)
+                    if data:
+                        col_len = len(data["columns"])
+                        bad_rows = [row for row in data["data"] if len(row) != col_len]
+                        if bad_rows:
+                            st.warning(f"カラム数とデータ数が一致しない行があります。AI出力を確認してください。")
+                            st.write("columns:", data["columns"])
+                            st.write("data:", data["data"])
+                            if model == 'Claude':
+                                st.write(claude_result)
+                        try:
+                            df = pd.DataFrame(
+                                [row for row in data["data"] if len(row) == col_len],
+                                columns=data["columns"]
+                            )
+                            st.dataframe(df, use_container_width=True)
+                        except Exception as e:
+                            st.error(f"DataFrame生成エラー: {e}")
+                            st.write("columns:", data["columns"])
+                            st.write("data:", data["data"])
+                    else:
+                        st.warning("テーブルデータを抽出できませんでした。生出力を下記に表示します。")
+                        if model == 'Claude':
+                            st.write(claude_result)
+
+    # --- 3. 抽出条件入力・AIでフィルタリング ---
+    if st.session_state.get("table_json"):
+        st.header("STEP 3: テーブルから抽出したい条件や項目を入力（再学習イメージ）")
+        filter_query = st.text_input("抽出したい条件やキーワードを入力（例: '売上が1000万円以上の行'、'日付が2024年のデータ' など）")
+        extract_items_step3 = st.text_input("抽出したい項目（カンマ区切りで複数指定可。例: 氏名, 金額, 日付 など）", key="extract_items_step3")
+        if st.button("AIで条件抽出", key="filter"):
+            with st.spinner("AIが条件に合うデータを抽出しています..."):
+                table_json = st.session_state["table_json"]
+                extract_part = f"抽出したい項目: {extract_items_step3}。" if extract_items_step3 else ""
+                filter_prompt = (
+                    "次のテーブルデータ（JSON: {columns: [...], data: [[...], ...]}）から、" +
+                    f"'{filter_query}' に合致する行だけを抽出し、同じ形式のJSONで返してください。絶対にJSONだけを返してください。解説や余計な文章は不要です。"
+                    "テーブル内の空白セルも正確に抽出し、空欄は空文字列（\"\"）で出力してください。"
+                    f"{extract_part}\n"
+                    f"テーブルデータ: {json.dumps(table_json, ensure_ascii=False)}"
+                )
+                filter_result = reader.read_image_and_extract_info(save_path, filter_prompt)
+                try:
+                    json_start = filter_result.find('{')
+                    json_str = filter_result[json_start:]
+                    filtered_json = json.loads(json_str)
+                    st.success("抽出結果を下記に表示します。")
+                    df_filtered = pd.DataFrame(filtered_json["data"], columns=filtered_json["columns"])
+                    st.dataframe(df_filtered, use_container_width=True)
+                except Exception as e:
+                    st.error(f"AIの出力から抽出結果を取得できませんでした: {e}")
+                    st.write("AIの生出力:", filter_result)
+
+    # 保存済み結果表示
+    ocr_ids = st.session_state.get("ocr_ids", [])
+    if st.session_state.get("ocr_done") and ocr_ids:
+        st.success("選択した自社株のOCR読み取りが完了しました。下記に結果を表示します。")
+        entries = reader.get_ocr_entries_with_images(db_path, png_dir)
+        table_data = []
+        for entry in entries:
+            if entry['id'] in ocr_ids:
+                key_claude = f"claude_result_{entry['id']}"
+                key_openai = f"openai_result_{entry['id']}"
+                table_data.append({
+                    "ファイル名": entry['filename'],
+                    "want_to_read": entry['want_to_read'],
+                    f"Claude Vision（{reader.model}）": st.session_state.get(key_claude, ""),
+                    "OpenAI Vision（gpt-4o）": st.session_state.get(key_openai, "")
+                })
+        if table_data:
+            st.dataframe(table_data)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("もう一度選択・実行する", key="reset_ocr"):
+                st.session_state.ocr_done = False
+                st.session_state.ocr_ids = []
+                st.experimental_rerun()
+        with col2:
+            if st.button("出力結果を一括登録", key="register_all_results"):
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                updated = 0
+                for entry in entries:
+                    if entry['id'] in ocr_ids:
+                        key_claude = f"claude_result_{entry['id']}"
+                        key_openai = f"openai_result_{entry['id']}"
+                        result_to_save = st.session_state.get(key_claude) or st.session_state.get(key_openai)
+                        if result_to_save:
+                            cursor.execute("UPDATE ocr SET result = ? WHERE id = ?", (result_to_save, entry['id']))
+                            updated += 1
+                conn.commit()
+                conn.close()
+                st.success(f"{updated}件の出力結果をデータベースに登録しました。") 
