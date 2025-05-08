@@ -4,11 +4,10 @@ __pycache__/
 *.log
 *.env
 .env
-db/*.db
+!db/qa.db
 png/
 tmp_*
 .streamlit/secrets.toml
-db/*.db
 png/
 sounds/
 *.csv
